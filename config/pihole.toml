@@ -1,0 +1,26 @@
+# Baked FTL config: stdout logs, no query DB, no web UI, gravity in /etc/pihole (read-only use).
+[dns]
+port = 5353
+listeningMode = "LOCAL"
+upstreams = [ "1.1.1.3", "1.0.0.3" ]
+queryLogging = false
+
+[files.log]
+ftl = "/tmp/pihole-ftl.pipe"
+dnsmasq = "/tmp/pihole-dnsmasq.pipe"
+webserver = "/tmp/pihole-web.pipe"
+
+[files]
+database = "/tmp/pihole-FTL.db"
+pid = "/tmp/pihole-FTL.pid"
+
+[database]
+maxDBdays = 0
+DBimport = false
+
+[misc]
+privacylevel = 3
+readOnly = true
+
+[webserver]
+port = ""

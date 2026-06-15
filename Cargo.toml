@@ -1,0 +1,48 @@
+[package]
+name = "trypanophobe"
+version = "0.1.0"
+edition = "2021"
+description = "Guardian CLI filter backend"
+license = "MIT"
+
+[lib]
+name = "trypanophobe"
+path = "src/lib.rs"
+
+[[bin]]
+name = "trypanophobe"
+path = "src/bin/trypanophobe.rs"
+
+[dependencies]
+async-trait = "0.1"
+salvo = { version = "0.93", features = ["oapi", "affix-state", "size-limiter", "cors"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "sync", "time", "fs", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+url = "2"
+regex = "1"
+llama-cpp-4 = "0.3"
+anytomd = { version = "1", default-features = false }
+liteparse = { version = "2", default-features = false }
+hickory-resolver = { version = "0.24", features = ["tokio-runtime"] }
+ocrs = "0.12"
+rten = "0.24"
+candle-core = "0.8"
+candle-nn = "0.8"
+candle-transformers = "0.8"
+tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["download-binaries", "ndarray", "tls-rustls", "std", "copy-dylibs", "half"] }
+half = "2.1"
+ndarray = { version = "0.17", default-features = false, features = ["std"] }
+moka = { version = "0.12", features = ["sync"] }
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

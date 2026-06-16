@@ -9,6 +9,7 @@ use tokenizers::Tokenizer;
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
 use crate::services::preprocess::preprocess_for_nsfw_text;
+use crate::services::sliding_window::token_windows;
 
 #[derive(Debug, Clone)]
 pub struct NsfwTextResult {
@@ -23,6 +24,7 @@ pub struct NsfwTextClassifier {
     tokenizer: Tokenizer,
     device: Device,
     threshold: f32,
+    window_tokens: usize,
 }
 
 impl NsfwTextClassifier {
@@ -61,6 +63,7 @@ impl NsfwTextClassifier {
             tokenizer,
             device,
             threshold: cfg.nsfw_text_threshold,
+            window_tokens: cfg.nsfw_text_window_tokens,
         }))
     }
 
@@ -82,10 +85,25 @@ impl NsfwTextClassifier {
             .tokenizer
             .encode(prepared.as_str(), true)
             .map_err(|e| AppError::Internal(format!("nsfw text tokenize: {e}")))?;
-        let input_ids: Vec<u32> = encoding.get_ids().to_vec();
-        let attention: Vec<u32> = encoding.get_attention_mask().to_vec();
+        let ids: Vec<u32> = encoding.get_ids().to_vec();
+        let windows = token_windows(&ids, self.window_tokens, self.window_tokens);
 
-        let input_ids = Tensor::new(vec![input_ids], &self.device)
+        for window in windows {
+            let result = self.classify_token_ids(window)?;
+            if result.blocked {
+                return Ok(result);
+            }
+        }
+
+        Ok(NsfwTextResult {
+            label: "safe".into(),
+            blocked: false,
+        })
+    }
+
+    fn classify_token_ids(&self, token_ids: &[u32]) -> AppResult<NsfwTextResult> {
+        let attention: Vec<u32> = vec![1; token_ids.len()];
+        let input_ids = Tensor::new(vec![token_ids.to_vec()], &self.device)
             .map_err(|e| AppError::Internal(e.to_string()))?;
         let attention_mask = Tensor::new(vec![attention], &self.device)
             .map_err(|e| AppError::Internal(e.to_string()))?;

@@ -1,19 +1,22 @@
 use salvo::http::StatusCode;
 
+use crate::error::{AppError, AppResult};
 use crate::pipeline::chunk::MarkdownChunk;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResponseFormat {
-    Original,
-    Markdown,
+    Og,
+    Md,
 }
 
 impl ResponseFormat {
-    pub fn from_query(markdown_param: bool, format_param: Option<&str>) -> Self {
-        if markdown_param || format_param == Some("markdown") {
-            Self::Markdown
-        } else {
-            Self::Original
+    pub fn from_query(format_param: Option<&str>) -> AppResult<Self> {
+        match format_param.unwrap_or("og") {
+            "og" => Ok(Self::Og),
+            "md" => Ok(Self::Md),
+            other => Err(AppError::BadRequest(format!(
+                "invalid format={other:?}; expected md or og"
+            ))),
         }
     }
 }
@@ -48,6 +51,10 @@ impl FilterResponse {
             return Self::blocked();
         }
 
+        if safe_count < total && format == ResponseFormat::Og {
+            return Self::blocked();
+        }
+
         let status = if safe_count == total {
             StatusCode::OK
         } else {
@@ -55,7 +62,7 @@ impl FilterResponse {
         };
 
         let (body, content_type) = match format {
-            ResponseFormat::Markdown => {
+            ResponseFormat::Md => {
                 let joined = safe_chunks
                     .iter()
                     .map(|c| c.text.as_str())
@@ -68,7 +75,7 @@ impl FilterResponse {
                 };
                 (md.into_bytes(), Some("text/markdown".to_string()))
             }
-            ResponseFormat::Original => (original.to_vec(), None),
+            ResponseFormat::Og => (original.to_vec(), None),
         };
 
         Self {
@@ -95,19 +102,13 @@ mod tests {
                 text: "b".into(),
             },
         ];
-        let resp = FilterResponse::from_chunks(
-            b"orig",
-            "a\n\nb",
-            &chunks,
-            &chunks,
-            ResponseFormat::Original,
-        );
+        let resp = FilterResponse::from_chunks(b"orig", "a\n\nb", &chunks, &chunks, ResponseFormat::Og);
         assert_eq!(resp.status, StatusCode::OK);
         assert_eq!(resp.body, b"orig");
     }
 
     #[test]
-    fn partial_is_206() {
+    fn partial_md_is_206() {
         let all = vec![
             MarkdownChunk {
                 index: 0,
@@ -124,11 +125,28 @@ mod tests {
             "safe\n\nbad",
             &all,
             &safe,
-            ResponseFormat::Markdown,
+            ResponseFormat::Md,
         );
         assert_eq!(resp.status, StatusCode::PARTIAL_CONTENT);
         assert!(resp.body.starts_with(b"safe"));
         assert_eq!(resp.content_type.as_deref(), Some("text/markdown"));
+    }
+
+    #[test]
+    fn partial_og_is_406() {
+        let all = vec![
+            MarkdownChunk {
+                index: 0,
+                text: "safe".into(),
+            },
+            MarkdownChunk {
+                index: 1,
+                text: "bad".into(),
+            },
+        ];
+        let safe = vec![all[0].clone()];
+        let resp = FilterResponse::from_chunks(b"orig", "safe\n\nbad", &all, &safe, ResponseFormat::Og);
+        assert_eq!(resp.status, StatusCode::NOT_ACCEPTABLE);
     }
 
     #[test]
@@ -137,7 +155,14 @@ mod tests {
             index: 0,
             text: "bad".into(),
         }];
-        let resp = FilterResponse::from_chunks(b"x", "bad", &all, &[], ResponseFormat::Original);
+        let resp = FilterResponse::from_chunks(b"x", "bad", &all, &[], ResponseFormat::Og);
         assert_eq!(resp.status, StatusCode::NOT_ACCEPTABLE);
+    }
+
+    #[test]
+    fn from_query_defaults_og() {
+        assert_eq!(ResponseFormat::from_query(None).unwrap(), ResponseFormat::Og);
+        assert_eq!(ResponseFormat::from_query(Some("md")).unwrap(), ResponseFormat::Md);
+        assert!(ResponseFormat::from_query(Some("markdown")).is_err());
     }
 }

@@ -10,6 +10,8 @@ services:
     image: trypanophobe
     ports:
       - "${SMOKE_PORT:-8080}:8080"
+      - "${OCR_PORT:-8829}:8829"
+      - "${CHUNKER_PORT:-8830}:8830"
     deploy:
       resources:
         limits:

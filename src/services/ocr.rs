@@ -9,7 +9,7 @@ pub async fn check_ready(cfg: &Config) -> bool {
         Ok(c) => c,
         Err(_) => return false,
     };
-    let Ok(resp) = client.get(&cfg.paddleocr_health_url).send().await else {
+    let Ok(resp) = client.get(&cfg.ocr_health_url).send().await else {
         return false;
     };
     if !resp.status().is_success() {

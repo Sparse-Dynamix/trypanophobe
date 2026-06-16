@@ -1,0 +1,22 @@
+[project]
+name = "trypanophobe-ocr"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",
+    "paddlepaddle==3.3.0",
+    "paddleocr>=3.3.0",
+    "pillow>=10.0.0",
+    "numpy>=2.0.0",
+    "pydantic>=2.0.0",
+]
+
+[[tool.uv.index]]
+name = "paddle"
+url = "https://www.paddlepaddle.org.cn/packages/stable/cpu/"
+explicit = true
+
+[tool.uv.sources]
+paddlepaddle = { index = "paddle" }

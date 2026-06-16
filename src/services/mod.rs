@@ -1,9 +1,11 @@
+pub mod chunker;
 pub mod nsfw_image;
 pub mod nsfw_text;
-pub mod paddleocr;
+pub mod ocr;
 pub mod pihole;
 pub mod preprocess;
 pub mod sentinel;
+pub mod sliding_window;
 pub mod wolf;
 
 pub use nsfw_image::NsfwImageClassifier;

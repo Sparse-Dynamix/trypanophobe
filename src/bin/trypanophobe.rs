@@ -11,7 +11,7 @@ use trypanophobe::pipeline::url_guard::UrlGuard;
 use trypanophobe::readiness::{spawn_poller, spawn_warmup, Readiness};
 use trypanophobe::routes::{filter, health};
 use trypanophobe::services::{
-    paddleocr, NsfwImageClassifier, NsfwTextClassifier, PiholeProbe, Sentinel, WolfDefender,
+    chunker, ocr, NsfwImageClassifier, NsfwTextClassifier, PiholeProbe, Sentinel, WolfDefender,
 };
 use trypanophobe::state::AppState;
 
@@ -41,10 +41,16 @@ async fn main() -> anyhow::Result<()> {
         async move { PiholeProbe::check_ready(&c).await }
     });
 
-    let cfg_paddleocr = cfg.clone();
-    spawn_poller(handles.paddleocr, poll, move || {
-        let c = cfg_paddleocr.clone();
-        async move { paddleocr::check_ready(&c).await }
+    let cfg_ocr = cfg.clone();
+    spawn_poller(handles.ocr, poll, move || {
+        let c = cfg_ocr.clone();
+        async move { ocr::check_ready(&c).await }
+    });
+
+    let cfg_chunker = cfg.clone();
+    spawn_poller(handles.chunker, poll, move || {
+        let c = cfg_chunker.clone();
+        async move { chunker::check_ready(&c).await }
     });
 
     spawn_warmup(handles.sentinel, poll, {

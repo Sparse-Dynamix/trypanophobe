@@ -10,16 +10,16 @@ use salvo::http::StatusCode;
 
 use crate::convert_config::{hint_from_url_and_content_type, sniff_content_kind, ContentKind};
 use crate::error::{AppError, AppResult};
-use crate::pipeline::chunk::chunk_markdown;
 use crate::pipeline::convert::to_markdown;
 use crate::pipeline::moderate::{moderate_chunks, moderate_image};
 use crate::pipeline::respond::{FilterResponse, ResponseFormat};
+use crate::services::chunker;
 use crate::state::AppState;
 
 #[derive(Debug, Clone)]
 pub struct FilterRequest {
     pub body: Vec<u8>,
-    pub url: Option<String>,
+    pub url: String,
     pub content_type: Option<String>,
     pub response_format: ResponseFormat,
 }
@@ -32,16 +32,14 @@ pub async fn run_filter(state: &Arc<AppState>, req: FilterRequest) -> AppResult<
         )));
     }
 
-    if let Some(url) = &req.url {
-        state.wait_pihole().await?;
-        if !state.url_guard.check_url(url).await? {
-            return Ok(FilterResponse::blocked());
-        }
+    state.wait_pihole().await?;
+    if !state.url_guard.check_url(&req.url).await? {
+        return Ok(FilterResponse::blocked());
     }
 
     state.wait_ml().await?;
 
-    let hint = hint_from_url_and_content_type(req.url.as_deref(), req.content_type.as_deref());
+    let hint = hint_from_url_and_content_type(Some(&req.url), req.content_type.as_deref());
     let kind = sniff_content_kind(&hint, &req.body);
 
     let markdown = match kind {
@@ -56,7 +54,7 @@ pub async fn run_filter(state: &Arc<AppState>, req: FilterRequest) -> AppResult<
         }
         ContentKind::TextDocument => to_markdown(state, &hint, &req.body).await?,
         ContentKind::PlainText => {
-            if req.response_format == ResponseFormat::Markdown
+            if req.response_format == ResponseFormat::Md
                 || looks_like_html(&req.body)
                 || extension_suggests_convert(&hint)
             {
@@ -67,11 +65,7 @@ pub async fn run_filter(state: &Arc<AppState>, req: FilterRequest) -> AppResult<
         }
     };
 
-    let chunks = chunk_markdown(
-        &markdown,
-        state.config.max_markdown_chunks,
-        state.config.chunk_max_chars,
-    );
+    let chunks = chunker::chunk_text(&state.config, &markdown).await?;
     let safe_chunks = moderate_chunks(state, &chunks).await?;
 
     Ok(FilterResponse::from_chunks(

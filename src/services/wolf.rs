@@ -8,6 +8,7 @@ use tokenizers::Tokenizer;
 
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
+use crate::services::sliding_window::token_windows;
 
 #[derive(Debug, Clone)]
 pub struct WolfResult {
@@ -19,7 +20,7 @@ pub struct WolfDefender {
     session: Mutex<Session>,
     tokenizer: Tokenizer,
     threshold: f32,
-    max_length: usize,
+    window_tokens: usize,
 }
 
 impl WolfDefender {
@@ -47,15 +48,15 @@ impl WolfDefender {
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| AppError::Internal(format!("wolf tokenizer: {e}")))?;
 
-        let max_length = read_max_length(model_dir)
-            .map(|n| n.min(cfg.wolf_max_length))
-            .unwrap_or(cfg.wolf_max_length);
+        let window_tokens = read_max_length(model_dir)
+            .map(|n| n.min(cfg.wolf_window_tokens))
+            .unwrap_or(cfg.wolf_window_tokens);
 
         Ok(Arc::new(Self {
             session: Mutex::new(session),
             tokenizer,
             threshold: cfg.wolf_threshold,
-            max_length,
+            window_tokens,
         }))
     }
 
@@ -76,20 +77,26 @@ impl WolfDefender {
             .tokenizer
             .encode(text, true)
             .map_err(|e| AppError::Internal(format!("wolf tokenize: {e}")))?;
+        let ids: Vec<u32> = encoding.get_ids().to_vec();
+        let windows = token_windows(&ids, self.window_tokens, self.window_tokens);
 
-        let seq_len = encoding.get_ids().len().min(self.max_length);
-        let input_ids: Vec<i64> = encoding
-            .get_ids()
-            .iter()
-            .take(seq_len)
-            .map(|&id| id as i64)
-            .collect();
-        let attention_mask: Vec<i64> = encoding
-            .get_attention_mask()
-            .iter()
-            .take(seq_len)
-            .map(|&m| m as i64)
-            .collect();
+        for window in windows {
+            let result = self.classify_token_ids(window)?;
+            if result.blocked {
+                return Ok(result);
+            }
+        }
+
+        Ok(WolfResult {
+            label: "BENIGN".into(),
+            blocked: false,
+        })
+    }
+
+    fn classify_token_ids(&self, token_ids: &[u32]) -> AppResult<WolfResult> {
+        let seq_len = token_ids.len();
+        let input_ids: Vec<i64> = token_ids.iter().map(|&id| id as i64).collect();
+        let attention_mask: Vec<i64> = vec![1i64; seq_len];
 
         let input_ids_tensor = Tensor::from_array(([1, seq_len], input_ids))
             .map_err(|e| AppError::Internal(format!("wolf input tensor: {e}")))?;

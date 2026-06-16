@@ -37,7 +37,7 @@ fn liteparse_config(cfg: &Config) -> LiteParseConfig {
     LiteParseConfig {
         ocr_enabled: true,
         ocr_language: "eng".into(),
-        ocr_server_url: Some(cfg.paddleocr_url.clone()),
+        ocr_server_url: Some(cfg.ocr_url.clone()),
         ..Default::default()
     }
 }

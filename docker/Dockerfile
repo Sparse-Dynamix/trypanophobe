@@ -20,7 +20,8 @@ COPY config ./config
 COPY src ./src
 ENV CARGO_PROFILE_RELEASE_LTO=true
 ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
-RUN cargo build --release --bin trypanophobe \
+RUN cargo test --lib \
+    && cargo build --release --bin trypanophobe \
     && strip target/release/trypanophobe \
     && LLAMA_LIBDIR="$(find target/llama-cmake-cache -type f -name 'libllama.so.0.0.0' -printf '%h\n' | head -1)" \
     && mkdir -p /llama-libs \
@@ -59,16 +60,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice-writer libreoffice-calc libreoffice-impress \
     imagemagick \
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
-    python3 python3-pip python3-venv \
+    python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir --break-system-packages \
-    paddlepaddle==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/ \
-    && pip install --no-cache-dir --break-system-packages \
-    paddleocr fastapi uvicorn pillow numpy python-multipart
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
 
-COPY docker/paddleocr_server.py /usr/local/lib/trypanophobe/paddleocr_server.py
-RUN python3 -c "from paddleocr import PaddleOCR; PaddleOCR(lang='en', use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=True)"
+COPY src/services/ocr/pyproject.toml src/services/ocr/uv.lock /opt/trypanophobe/ocr/
+RUN uv sync --frozen --no-dev --directory /opt/trypanophobe/ocr
+COPY src/services/ocr/ /opt/trypanophobe/ocr/
+RUN --mount=type=secret,id=hf_token \
+    export HF_TOKEN="$(cat /run/secrets/hf_token)" && \
+    test -n "$HF_TOKEN" && \
+    uv run --directory /opt/trypanophobe/ocr python bake_assets.py
+
+COPY src/services/chunker/pyproject.toml src/services/chunker/uv.lock /opt/trypanophobe/chunker/
+RUN uv sync --frozen --no-dev --directory /opt/trypanophobe/chunker
+COPY src/services/chunker/ /opt/trypanophobe/chunker/
+RUN --mount=type=secret,id=hf_token \
+    export HF_TOKEN="$(cat /run/secrets/hf_token)" && \
+    test -n "$HF_TOKEN" && \
+    uv run --directory /opt/trypanophobe/chunker python bake_assets.py
 
 COPY --from=pihole-gravity /usr/bin/pihole-FTL /usr/bin/pihole-FTL
 COPY --from=pihole-gravity /usr/local/bin/pihole /usr/local/bin/pihole

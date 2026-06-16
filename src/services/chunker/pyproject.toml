@@ -1,0 +1,14 @@
+[project]
+name = "trypanophobe-chunker"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "chonkie>=1.6.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.0.0",
+    "huggingface-hub>=0.24.0",
+]
+
+[project.optional-dependencies]
+bake = ["huggingface-hub>=0.24.0"]

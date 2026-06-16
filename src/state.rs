@@ -7,7 +7,6 @@ use crate::pipeline::url_guard::UrlGuard;
 use crate::readiness::Readiness;
 use crate::services::nsfw_image::NsfwImageClassifier;
 use crate::services::nsfw_text::NsfwTextClassifier;
-use crate::services::ocr::OcrService;
 use crate::services::pihole::PiholeProbe;
 use crate::services::sentinel::Sentinel;
 use crate::services::wolf::WolfDefender;
@@ -19,7 +18,6 @@ pub struct AppState {
     pub nsfw_text: Arc<NsfwTextClassifier>,
     pub nsfw_image: Arc<NsfwImageClassifier>,
     pub wolf: Arc<WolfDefender>,
-    pub ocr: Arc<OcrService>,
     pub pihole: Arc<PiholeProbe>,
     pub url_guard: Arc<UrlGuard>,
     pub convert: ConvertConfig,
@@ -33,7 +31,6 @@ impl AppState {
         nsfw_text: Arc<NsfwTextClassifier>,
         nsfw_image: Arc<NsfwImageClassifier>,
         wolf: Arc<WolfDefender>,
-        ocr: Arc<OcrService>,
         pihole: Arc<PiholeProbe>,
         url_guard: Arc<UrlGuard>,
     ) -> Arc<Self> {
@@ -49,7 +46,6 @@ impl AppState {
             nsfw_text,
             nsfw_image,
             wolf,
-            ocr,
             pihole,
             url_guard,
         })
@@ -75,7 +71,12 @@ impl AppState {
         )
         .await?;
         Readiness::wait_for(&self.readiness.wolf, "wolf", self.config.readiness_wait).await?;
-        Readiness::wait_for(&self.readiness.ocr, "ocr", self.config.readiness_wait).await
+        Readiness::wait_for(
+            &self.readiness.paddleocr,
+            "paddleocr",
+            self.config.readiness_wait,
+        )
+        .await
     }
 
     pub async fn wait_pihole(&self) -> AppResult<()> {

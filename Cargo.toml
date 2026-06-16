@@ -29,8 +29,7 @@ llama-cpp-4 = "0.3"
 anytomd = { version = "1", default-features = false }
 liteparse = { version = "2", default-features = false }
 hickory-resolver = { version = "0.24", features = ["tokio-runtime"] }
-ocrs = "0.12"
-rten = "0.24"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 candle-core = "0.8"
 candle-nn = "0.8"
 candle-transformers = "0.8"

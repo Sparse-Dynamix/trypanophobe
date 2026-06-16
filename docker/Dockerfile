@@ -35,12 +35,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir huggingface_hub safetensors numpy timm onnx onnxscript
-COPY docker/extract_cls_head.py docker/bake_models.py /tmp/
+COPY docker/bake_models.py /tmp/
 RUN --mount=type=secret,id=hf_token \
     export HF_TOKEN="$(cat /run/secrets/hf_token)" && \
     test -n "$HF_TOKEN" && \
     python3 /tmp/bake_models.py
-RUN python3 /tmp/extract_cls_head.py /models/cls_head.pt /models/cls_head.f32.bin
 
 FROM pihole/pihole:${PIHOLE_VERSION} AS pihole-gravity
 RUN printf '%s\n' \
@@ -58,8 +57,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates supervisor openssl sqlite3 \
     libssl3 libgomp1 libstdc++6 \
     libreoffice-writer libreoffice-calc libreoffice-impress \
-    imagemagick tesseract-ocr tesseract-ocr-eng \
+    imagemagick \
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
+    python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir --break-system-packages \
+    paddlepaddle==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/ \
+    && pip install --no-cache-dir --break-system-packages \
+    paddleocr fastapi uvicorn pillow numpy python-multipart
+
+COPY docker/paddleocr_server.py /usr/local/lib/trypanophobe/paddleocr_server.py
+RUN python3 -c "from paddleocr import PaddleOCR; PaddleOCR(lang='en', use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=True)"
 
 COPY --from=pihole-gravity /usr/bin/pihole-FTL /usr/bin/pihole-FTL
 COPY --from=pihole-gravity /usr/local/bin/pihole /usr/local/bin/pihole

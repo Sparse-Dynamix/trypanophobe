@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Build-only: download and bake all inference assets under /models."""
 import os
+import struct
 from pathlib import Path
 
+import numpy as np
+import torch
 from huggingface_hub import hf_hub_download, snapshot_download
 
 MODELS = Path(os.environ.get("MODELS", "/models"))
@@ -11,13 +14,20 @@ SENTINEL_QUANT = os.environ["SENTINEL_QUANT"]
 NSFW_TEXT_REPO = "eliasalbouzidi/distilbert-nsfw-text-classifier"
 NSFW_IMAGE_REPO = "Marqo/nsfw-image-detection-384"
 WOLF_REPO = "patronus-studio/wolf-defender-prompt-injection"
-OCRS_DET_URL = "https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.rten"
-OCRS_REC_URL = "https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.rten"
+
+
+def extract_cls_head(src: Path, dst: Path) -> None:
+    obj = torch.load(src, map_location="cpu", weights_only=False)
+    t = (obj["weight"] if isinstance(obj, dict) else obj).detach().float().numpy()
+    rows, cols = int(t.shape[0]), int(t.shape[1])
+    with open(dst, "wb") as out:
+        out.write(struct.pack("<II", rows, cols))
+        out.write(t.astype(np.float32).tobytes())
+    print(f"wrote {dst} shape=({rows}, {cols})")
 
 
 def export_marqo_nsfw_onnx(image_dir: Path) -> None:
     import timm
-    import torch
     from safetensors.torch import load_file
 
     weights_path = image_dir / "model.safetensors"
@@ -71,12 +81,7 @@ def main() -> None:
         ],
     )
 
-    ocrs_dir = MODELS / "ocrs"
-    ocrs_dir.mkdir(parents=True, exist_ok=True)
-    import urllib.request
-
-    urllib.request.urlretrieve(OCRS_DET_URL, ocrs_dir / "text-detection.rten")
-    urllib.request.urlretrieve(OCRS_REC_URL, ocrs_dir / "text-recognition.rten")
+    extract_cls_head(MODELS / "cls_head.pt", MODELS / "cls_head.f32.bin")
 
     print("baked models:", sorted(p.name for p in MODELS.iterdir()))
 

@@ -96,6 +96,7 @@ impl Sentinel {
     }
 
     async fn classify_tokens(&self, tokens: &[LlamaToken]) -> AppResult<ChunkScores> {
+        // Fair semaphore (parallel=1): concurrent requests wait FIFO for the single slot.
         let _permit = self
             .parallel
             .acquire()

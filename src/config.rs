@@ -29,7 +29,8 @@ pub struct Config {
     pub nsfw_text_model_dir: PathBuf,
     pub nsfw_image_model_dir: PathBuf,
     pub wolf_model_dir: PathBuf,
-    pub ocrs_model_dir: PathBuf,
+    pub paddleocr_url: String,
+    pub paddleocr_health_url: String,
     pub nsfw_text_threshold: f32,
     pub nsfw_image_threshold: f32,
     pub wolf_threshold: f32,
@@ -140,7 +141,6 @@ impl Config {
         let default_nsfw_text = models_base.join("nsfw-text");
         let default_nsfw_image = models_base.join("nsfw-image");
         let default_wolf = models_base.join("wolf-defender");
-        let default_ocrs = models_base.join("ocrs");
 
         Self {
             bind_host: env_str("BIND_HOST"),
@@ -178,9 +178,8 @@ impl Config {
             wolf_model_dir: env_opt("WOLF_MODEL_DIR")
                 .map(PathBuf::from)
                 .unwrap_or(default_wolf),
-            ocrs_model_dir: env_opt("OCRS_MODEL_DIR")
-                .map(PathBuf::from)
-                .unwrap_or(default_ocrs),
+            paddleocr_url: env_str("PADDLEOCR_URL"),
+            paddleocr_health_url: env_str("PADDLEOCR_HEALTH_URL"),
             nsfw_text_threshold: env_f32("NSFW_TEXT_THRESHOLD"),
             nsfw_image_threshold: env_f32("NSFW_IMAGE_THRESHOLD"),
             wolf_threshold: env_f32("WOLF_THRESHOLD"),

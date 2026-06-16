@@ -11,7 +11,7 @@ use trypanophobe::pipeline::url_guard::UrlGuard;
 use trypanophobe::readiness::{spawn_poller, spawn_warmup, Readiness};
 use trypanophobe::routes::{filter, health};
 use trypanophobe::services::{
-    NsfwImageClassifier, NsfwTextClassifier, OcrService, PiholeProbe, Sentinel, WolfDefender,
+    paddleocr, NsfwImageClassifier, NsfwTextClassifier, PiholeProbe, Sentinel, WolfDefender,
 };
 use trypanophobe::state::AppState;
 
@@ -28,7 +28,6 @@ async fn main() -> anyhow::Result<()> {
     let nsfw_text = NsfwTextClassifier::load(&cfg)?;
     let nsfw_image = NsfwImageClassifier::load(&cfg)?;
     let wolf = WolfDefender::load(&cfg)?;
-    let ocr = OcrService::load(&cfg)?;
     let pihole = PiholeProbe::new(&cfg)?;
     let url_guard = UrlGuard::new(&cfg, Arc::clone(&pihole));
 
@@ -40,6 +39,12 @@ async fn main() -> anyhow::Result<()> {
     spawn_poller(handles.pihole, poll, move || {
         let c = cfg_pihole.clone();
         async move { PiholeProbe::check_ready(&c).await }
+    });
+
+    let cfg_paddleocr = cfg.clone();
+    spawn_poller(handles.paddleocr, poll, move || {
+        let c = cfg_paddleocr.clone();
+        async move { paddleocr::check_ready(&c).await }
     });
 
     spawn_warmup(handles.sentinel, poll, {
@@ -70,13 +75,6 @@ async fn main() -> anyhow::Result<()> {
             async move { c.warmup().await }
         }
     });
-    spawn_warmup(handles.ocr, poll, {
-        let c = Arc::clone(&ocr);
-        move || {
-            let c = Arc::clone(&c);
-            async move { c.warmup().await }
-        }
-    });
 
     let state = AppState::new(
         cfg.clone(),
@@ -85,7 +83,6 @@ async fn main() -> anyhow::Result<()> {
         nsfw_text,
         nsfw_image,
         wolf,
-        ocr,
         pihole,
         url_guard,
     );

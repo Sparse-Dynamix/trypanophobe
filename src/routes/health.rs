@@ -12,7 +12,7 @@ pub struct HealthResponse {
     pub nsfw_text: bool,
     pub nsfw_image: bool,
     pub wolf: bool,
-    pub ocr: bool,
+    pub paddleocr: bool,
 }
 
 #[endpoint(responses((status_code = 200, body = HealthResponse)))]
@@ -23,7 +23,7 @@ pub async fn health(depot: &mut Depot) -> Json<HealthResponse> {
     let nsfw_text = *app.readiness.nsfw_text.borrow();
     let nsfw_image = *app.readiness.nsfw_image.borrow();
     let wolf = *app.readiness.wolf.borrow();
-    let ocr = *app.readiness.ocr.borrow();
+    let paddleocr = *app.readiness.paddleocr.borrow();
     Json(HealthResponse {
         status: "ok".into(),
         sentinel,
@@ -31,6 +31,6 @@ pub async fn health(depot: &mut Depot) -> Json<HealthResponse> {
         nsfw_text,
         nsfw_image,
         wolf,
-        ocr,
+        paddleocr,
     })
 }

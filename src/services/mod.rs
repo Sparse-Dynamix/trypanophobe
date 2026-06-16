@@ -1,6 +1,6 @@
 pub mod nsfw_image;
 pub mod nsfw_text;
-pub mod ocr;
+pub mod paddleocr;
 pub mod pihole;
 pub mod preprocess;
 pub mod sentinel;
@@ -8,7 +8,6 @@ pub mod wolf;
 
 pub use nsfw_image::NsfwImageClassifier;
 pub use nsfw_text::NsfwTextClassifier;
-pub use ocr::OcrService;
 pub use pihole::PiholeProbe;
 pub use sentinel::Sentinel;
 pub use wolf::WolfDefender;

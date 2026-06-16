@@ -38,7 +38,7 @@ fi
 
 filter_ready() {
   curl -sf --max-time 2 "$BASE/api/health" | jq -e \
-    '.sentinel and .pihole and .nsfw_text and .nsfw_image and .wolf and .ocr' >/dev/null 2>&1
+    '.sentinel and .pihole and .nsfw_text and .nsfw_image and .wolf and .paddleocr' >/dev/null 2>&1
 }
 
 wait_ready() {

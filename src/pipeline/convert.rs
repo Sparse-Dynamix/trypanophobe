@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use liteparse::{LiteParse, LiteParseConfig};
 
+use crate::config::Config;
 use crate::convert_config::{extension_from_filename, is_liteparse_ext, ConvertConfig};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
@@ -17,7 +18,7 @@ pub async fn to_markdown(state: &Arc<AppState>, hint: &str, data: &[u8]) -> AppR
     let ext = extension_from_filename(hint).map_err(AppError::Unprocessable)?;
 
     if is_liteparse_ext(&ext) {
-        return liteparse_to_markdown(&ext, data).await;
+        return liteparse_to_markdown(state, &ext, data).await;
     }
 
     anytomd_convert(&state.convert, data, &ext)
@@ -28,22 +29,25 @@ pub async fn image_to_markdown(
     hint: &str,
     data: &[u8],
 ) -> AppResult<String> {
-    let img = crate::services::decode_image(data)?;
-    let text = state.ocr.extract_text(&img)?;
-    if !text.is_empty() {
-        return Ok(text);
-    }
-
     let ext = extension_from_filename(hint).unwrap_or_else(|_| "png".into());
-    liteparse_to_markdown(&ext, data).await
+    liteparse_to_markdown(state, &ext, data).await
 }
 
-async fn liteparse_to_markdown(ext: &str, data: &[u8]) -> AppResult<String> {
+fn liteparse_config(cfg: &Config) -> LiteParseConfig {
+    LiteParseConfig {
+        ocr_enabled: true,
+        ocr_language: "eng".into(),
+        ocr_server_url: Some(cfg.paddleocr_url.clone()),
+        ..Default::default()
+    }
+}
+
+async fn liteparse_to_markdown(state: &Arc<AppState>, ext: &str, data: &[u8]) -> AppResult<String> {
     let dir = tempfile::tempdir().map_err(|e| AppError::Internal(e.to_string()))?;
     let path = dir.path().join(format!("input.{ext}"));
     std::fs::write(&path, data).map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let config = LiteParseConfig::default();
+    let config = liteparse_config(&state.config);
     let parser = LiteParse::new(config);
     let result = parser
         .parse(path.to_string_lossy().as_ref())

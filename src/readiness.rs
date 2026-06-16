@@ -12,7 +12,7 @@ pub struct Readiness {
     pub nsfw_text: watch::Receiver<bool>,
     pub nsfw_image: watch::Receiver<bool>,
     pub wolf: watch::Receiver<bool>,
-    pub ocr: watch::Receiver<bool>,
+    pub paddleocr: watch::Receiver<bool>,
 }
 
 impl Readiness {
@@ -22,7 +22,7 @@ impl Readiness {
         let (nsfw_text_tx, nsfw_text_rx) = watch::channel(false);
         let (nsfw_image_tx, nsfw_image_rx) = watch::channel(false);
         let (wolf_tx, wolf_rx) = watch::channel(false);
-        let (ocr_tx, ocr_rx) = watch::channel(false);
+        let (paddleocr_tx, paddleocr_rx) = watch::channel(false);
         (
             Self {
                 sentinel: sentinel_rx,
@@ -30,7 +30,7 @@ impl Readiness {
                 nsfw_text: nsfw_text_rx,
                 nsfw_image: nsfw_image_rx,
                 wolf: wolf_rx,
-                ocr: ocr_rx,
+                paddleocr: paddleocr_rx,
             },
             ReadinessHandles {
                 sentinel: sentinel_tx,
@@ -38,7 +38,7 @@ impl Readiness {
                 nsfw_text: nsfw_text_tx,
                 nsfw_image: nsfw_image_tx,
                 wolf: wolf_tx,
-                ocr: ocr_tx,
+                paddleocr: paddleocr_tx,
             },
         )
     }
@@ -73,7 +73,7 @@ pub struct ReadinessHandles {
     pub nsfw_text: watch::Sender<bool>,
     pub nsfw_image: watch::Sender<bool>,
     pub wolf: watch::Sender<bool>,
-    pub ocr: watch::Sender<bool>,
+    pub paddleocr: watch::Sender<bool>,
 }
 
 pub fn spawn_poller<F, Fut>(tx: watch::Sender<bool>, interval: Duration, mut check: F)

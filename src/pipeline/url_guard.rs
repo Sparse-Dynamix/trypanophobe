@@ -1,10 +1,9 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use moka::sync::Cache;
 
 use crate::config::Config;
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::network_policy::url_blocked;
 use crate::services::pihole::{parse_host, PiholeProbe};
 
@@ -42,26 +41,21 @@ impl UrlGuard {
         }
         Ok(allowed)
     }
-
-    pub async fn warmup(pihole: &Arc<PiholeProbe>, host: &str) -> AppResult<()> {
-        let result = pihole.probe_host(host).await?;
-        if !result.allowed {
-            return Err(AppError::Internal(format!(
-                "pihole warmup failed for {host}: {:?}",
-                result.reason
-            )));
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn cache_ttl_config() {
-        let ttl = Duration::from_secs(300);
-        assert_eq!(ttl.as_secs(), 300);
+    #[tokio::test]
+    async fn blocks_imds_url() {
+        let cfg = Config::from_env();
+        let pihole = PiholeProbe::new(&cfg).expect("pihole");
+        let guard = UrlGuard::new(&cfg, pihole);
+        let allowed = guard
+            .check_url("http://169.254.169.254/latest/meta-data/")
+            .await
+            .expect("check");
+        assert!(!allowed);
     }
 }

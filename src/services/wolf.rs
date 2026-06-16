@@ -8,7 +8,7 @@ use tokenizers::Tokenizer;
 
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
-use crate::services::sliding_window::token_windows;
+use crate::services::math::softmax_probs;
 
 #[derive(Debug, Clone)]
 pub struct WolfResult {
@@ -78,7 +78,7 @@ impl WolfDefender {
             .encode(text, true)
             .map_err(|e| AppError::Internal(format!("wolf tokenize: {e}")))?;
         let ids: Vec<u32> = encoding.get_ids().to_vec();
-        let windows = token_windows(&ids, self.window_tokens, self.window_tokens);
+        let windows: Vec<_> = ids.chunks(self.window_tokens).collect();
 
         for window in windows {
             let result = self.classify_token_ids(window)?;
@@ -120,9 +120,8 @@ impl WolfDefender {
             .map_err(|e| AppError::Internal(format!("wolf logits: {e}")))?;
 
         let injection_score = if data.len() >= 2 {
-            let a = data[0].to_f32();
-            let b = data[1].to_f32();
-            softmax2(a, b).1
+            let logits = [data[0].to_f32(), data[1].to_f32()];
+            softmax_probs(&logits)?[1]
         } else if data.len() == 1 {
             data[0].to_f32()
         } else {
@@ -147,10 +146,20 @@ fn read_max_length(model_dir: &Path) -> Option<usize> {
     v.get("model_max_length")?.as_u64().map(|n| n as usize)
 }
 
-fn softmax2(a: f32, b: f32) -> (f32, f32) {
-    let m = a.max(b);
-    let ea = (a - m).exp();
-    let eb = (b - m).exp();
-    let s = ea + eb;
-    (ea / s, eb / s)
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn short_input_single_window() {
+        let ids: Vec<u32> = (0..3).collect();
+        assert_eq!(ids.chunks(512).count(), 1);
+    }
+
+    #[test]
+    fn four_windows_for_2048_tokens() {
+        let ids: Vec<u32> = (0..2048).collect();
+        let windows: Vec<_> = ids.chunks(512).collect();
+        assert_eq!(windows.len(), 4);
+        assert_eq!(windows[0].len(), 512);
+        assert_eq!(windows[3].len(), 512);
+    }
 }

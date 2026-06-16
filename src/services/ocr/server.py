@@ -5,11 +5,9 @@
 from __future__ import annotations
 
 import io
-import json
 import logging
 import os
 import traceback
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -17,11 +15,9 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.datastructures import UploadFile
 from fastapi.param_functions import File, Form
-from paddleocr import PaddleOCR
+from paddle_ocr import BAKED_LANG, create_paddle_ocr, model_dir
 from PIL import Image
 from pydantic import BaseModel
-
-BAKED_LANG = "en"
 
 
 class OcrResponse(BaseModel):
@@ -32,29 +28,13 @@ class StatusResponse(BaseModel):
     status: str
 
 
-def _model_dir() -> Path:
-    return Path(os.environ.get("OCR_MODEL_DIR", "/opt/trypanophobe/ocr/models"))
-
-
-def _create_ocr() -> PaddleOCR:
-    os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-    os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(_model_dir()))
-    return PaddleOCR(
-        lang=BAKED_LANG,
-        use_doc_orientation_classify=False,
-        use_doc_unwarping=False,
-        use_textline_orientation=True,
-        enable_mkldnn=False,
-    )
-
-
 def _normalize_language(language: str) -> str:
     normalized = language.lower()
     aliases = {"eng": "en"}
     return aliases.get(normalized, normalized)
 
 
-def _create_app(ocr: PaddleOCR) -> FastAPI:
+def _create_app(ocr) -> FastAPI:
     app = FastAPI()
 
     @app.post("/ocr")
@@ -148,12 +128,12 @@ def _create_app(ocr: PaddleOCR) -> FastAPI:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    manifest = _model_dir() / "manifest.json"
+    manifest = model_dir() / "manifest.json"
     if manifest.is_file():
         logging.info("OCR manifest: %s", manifest.read_text().strip())
     host = os.environ.get("OCR_HOST", "0.0.0.0")
     port = int(os.environ.get("OCR_PORT", "8829"))
-    ocr = _create_ocr()
+    ocr = create_paddle_ocr()
     logging.info("Starting OCR server on %s:%s", host, port)
     uvicorn.run(_create_app(ocr), host=host, port=port)
 

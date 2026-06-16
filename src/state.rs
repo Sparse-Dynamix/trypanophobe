@@ -72,8 +72,12 @@ impl AppState {
         .await?;
         Readiness::wait_for(&self.readiness.wolf, "wolf", self.config.readiness_wait).await?;
         Readiness::wait_for(&self.readiness.ocr, "ocr", self.config.readiness_wait).await?;
-        Readiness::wait_for(&self.readiness.chunker, "chunker", self.config.readiness_wait)
-            .await
+        Readiness::wait_for(
+            &self.readiness.chunker,
+            "chunker",
+            self.config.readiness_wait,
+        )
+        .await
     }
 
     pub async fn wait_pihole(&self) -> AppResult<()> {

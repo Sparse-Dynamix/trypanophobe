@@ -81,7 +81,7 @@ pub struct ReadinessHandles {
     pub chunker: watch::Sender<bool>,
 }
 
-pub fn spawn_poller<F, Fut>(tx: watch::Sender<bool>, interval: Duration, mut check: F)
+pub fn spawn_until_ready<F, Fut>(tx: watch::Sender<bool>, interval: Duration, mut check: F)
 where
     F: FnMut() -> Fut + Send + 'static,
     Fut: std::future::Future<Output = bool> + Send,
@@ -89,22 +89,6 @@ where
     tokio::spawn(async move {
         loop {
             if check().await {
-                let _ = tx.send(true);
-                break;
-            }
-            sleep(interval).await;
-        }
-    });
-}
-
-pub fn spawn_warmup<W, F>(tx: watch::Sender<bool>, interval: Duration, mut warm: W)
-where
-    W: FnMut() -> F + Send + 'static,
-    F: std::future::Future<Output = AppResult<()>> + Send,
-{
-    tokio::spawn(async move {
-        loop {
-            if warm().await.is_ok() {
                 let _ = tx.send(true);
                 break;
             }

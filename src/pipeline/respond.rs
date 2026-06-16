@@ -1,7 +1,7 @@
 use salvo::http::StatusCode;
 
 use crate::error::{AppError, AppResult};
-use crate::pipeline::chunk::MarkdownChunk;
+use crate::services::chunker::MarkdownChunk;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResponseFormat {
@@ -102,7 +102,8 @@ mod tests {
                 text: "b".into(),
             },
         ];
-        let resp = FilterResponse::from_chunks(b"orig", "a\n\nb", &chunks, &chunks, ResponseFormat::Og);
+        let resp =
+            FilterResponse::from_chunks(b"orig", "a\n\nb", &chunks, &chunks, ResponseFormat::Og);
         assert_eq!(resp.status, StatusCode::OK);
         assert_eq!(resp.body, b"orig");
     }
@@ -120,13 +121,8 @@ mod tests {
             },
         ];
         let safe = vec![all[0].clone()];
-        let resp = FilterResponse::from_chunks(
-            b"orig",
-            "safe\n\nbad",
-            &all,
-            &safe,
-            ResponseFormat::Md,
-        );
+        let resp =
+            FilterResponse::from_chunks(b"orig", "safe\n\nbad", &all, &safe, ResponseFormat::Md);
         assert_eq!(resp.status, StatusCode::PARTIAL_CONTENT);
         assert!(resp.body.starts_with(b"safe"));
         assert_eq!(resp.content_type.as_deref(), Some("text/markdown"));
@@ -145,7 +141,8 @@ mod tests {
             },
         ];
         let safe = vec![all[0].clone()];
-        let resp = FilterResponse::from_chunks(b"orig", "safe\n\nbad", &all, &safe, ResponseFormat::Og);
+        let resp =
+            FilterResponse::from_chunks(b"orig", "safe\n\nbad", &all, &safe, ResponseFormat::Og);
         assert_eq!(resp.status, StatusCode::NOT_ACCEPTABLE);
     }
 
@@ -161,8 +158,14 @@ mod tests {
 
     #[test]
     fn from_query_defaults_og() {
-        assert_eq!(ResponseFormat::from_query(None).unwrap(), ResponseFormat::Og);
-        assert_eq!(ResponseFormat::from_query(Some("md")).unwrap(), ResponseFormat::Md);
+        assert_eq!(
+            ResponseFormat::from_query(None).unwrap(),
+            ResponseFormat::Og
+        );
+        assert_eq!(
+            ResponseFormat::from_query(Some("md")).unwrap(),
+            ResponseFormat::Md
+        );
         assert!(ResponseFormat::from_query(Some("markdown")).is_err());
     }
 }

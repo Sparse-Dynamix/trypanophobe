@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use candle_core::{DType, Device, IndexOp, Tensor};
-use candle_nn::{linear, Linear, Module, VarBuilder};
+use candle_nn::{linear, ops::softmax, Linear, Module, VarBuilder};
 use candle_transformers::models::distilbert::{Config as DistilConfig, DistilBertModel};
 use serde::Deserialize;
 use tokenizers::Tokenizer;
@@ -9,7 +9,6 @@ use tokenizers::Tokenizer;
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
 use crate::services::preprocess::preprocess_for_nsfw_text;
-use crate::services::sliding_window::token_windows;
 
 #[derive(Debug, Clone)]
 pub struct NsfwTextResult {
@@ -86,9 +85,7 @@ impl NsfwTextClassifier {
             .encode(prepared.as_str(), true)
             .map_err(|e| AppError::Internal(format!("nsfw text tokenize: {e}")))?;
         let ids: Vec<u32> = encoding.get_ids().to_vec();
-        let windows = token_windows(&ids, self.window_tokens, self.window_tokens);
-
-        for window in windows {
+        for window in ids.chunks(self.window_tokens) {
             let result = self.classify_token_ids(window)?;
             if result.blocked {
                 return Ok(result);
@@ -126,15 +123,14 @@ impl NsfwTextClassifier {
             .forward(&pooled)
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
-        let logits = logits
+        let probs = softmax(&logits, 1).map_err(|e| AppError::Internal(e.to_string()))?;
+        let row = probs
             .to_vec2::<f32>()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-        let row = logits
-            .first()
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .into_iter()
+            .next()
             .ok_or_else(|| AppError::Internal("empty logits".into()))?;
-        let (safe, nsfw) = (row[0], row[1]);
-        let probs = softmax2(safe, nsfw);
-        let nsfw_score = probs.1 as f64;
+        let nsfw_score = row[1] as f64;
         let blocked = nsfw_score >= self.threshold as f64;
         Ok(NsfwTextResult {
             label: if blocked { "nsfw" } else { "safe" }.into(),
@@ -146,12 +142,4 @@ impl NsfwTextClassifier {
 #[derive(Debug, Deserialize)]
 struct DistilHeadDims {
     dim: usize,
-}
-
-fn softmax2(a: f32, b: f32) -> (f32, f32) {
-    let m = a.max(b);
-    let ea = (a - m).exp();
-    let eb = (b - m).exp();
-    let s = ea + eb;
-    (ea / s, eb / s)
 }

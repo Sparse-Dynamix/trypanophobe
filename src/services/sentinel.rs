@@ -13,6 +13,7 @@ use tokio::sync::Semaphore;
 
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
+use crate::services::math::softmax_probs;
 
 const TOKEN_OVERHEAD: usize = 16;
 const MAX_DECODE_BATCH: u32 = 2_048;
@@ -133,7 +134,7 @@ impl Sentinel {
                 .embeddings_ith(last)
                 .map_err(|e| AppError::Internal(format!("embed: {e}")))?;
 
-            Ok(classify_embedding(emb, &cls_head))
+            classify_embedding(emb, &cls_head)
         })
         .await
         .map_err(|e| AppError::Internal(format!("join: {e}")))?
@@ -142,7 +143,6 @@ impl Sentinel {
 
 #[derive(Clone)]
 struct ChunkScores {
-    benign_prob: f32,
     jailbreak_prob: f32,
 }
 
@@ -152,7 +152,7 @@ impl ChunkScores {
     }
 }
 
-fn classify_embedding(emb: &[f32], cls_head: &Array2<f32>) -> ChunkScores {
+fn classify_embedding(emb: &[f32], cls_head: &Array2<f32>) -> AppResult<ChunkScores> {
     let n_embd = cls_head.ncols();
     let mut logits = [0.0f32; 2];
     for k in 0..2 {
@@ -162,19 +162,10 @@ fn classify_embedding(emb: &[f32], cls_head: &Array2<f32>) -> ChunkScores {
         }
         logits[k] = sum;
     }
-    let probs = softmax2(logits);
-    ChunkScores {
-        benign_prob: probs[0],
+    let probs = softmax_probs(&logits)?;
+    Ok(ChunkScores {
         jailbreak_prob: probs[1],
-    }
-}
-
-fn softmax2(logits: [f32; 2]) -> [f32; 2] {
-    let max = logits[0].max(logits[1]);
-    let e0 = (logits[0] - max).exp();
-    let e1 = (logits[1] - max).exp();
-    let s = e0 + e1;
-    [e0 / s, e1 / s]
+    })
 }
 
 fn context_size(token_count: usize, max_input_tokens: usize) -> NonZeroU32 {

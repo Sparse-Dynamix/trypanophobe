@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::error::AppResult;
-use crate::pipeline::chunk::MarkdownChunk;
+use crate::services::chunker::MarkdownChunk;
 use crate::services::{decode_image, resize_for_pipeline};
 use crate::state::AppState;
 

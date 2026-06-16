@@ -41,7 +41,6 @@ pub struct Config {
     pub nsfw_text_window_tokens: usize,
     pub url_cache_ttl: Duration,
     pub url_cache_capacity: u64,
-    pub models_base: PathBuf,
 }
 
 fn trim_env_value(v: &str) -> &str {
@@ -192,7 +191,6 @@ impl Config {
             nsfw_text_window_tokens: env_usize("NSFW_TEXT_WINDOW_TOKENS").max(64),
             url_cache_ttl: env_secs("URL_CACHE_TTL_SECS"),
             url_cache_capacity: env_u64("URL_CACHE_CAPACITY"),
-            models_base,
         }
     }
 }

@@ -1,11 +1,14 @@
-use std::time::Duration;
-
-use reqwest::Client;
 use serde::Deserialize;
 
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
-use crate::pipeline::chunk::MarkdownChunk;
+use crate::services::sidecar;
+
+#[derive(Debug, Clone)]
+pub struct MarkdownChunk {
+    pub index: usize,
+    pub text: String,
+}
 
 #[derive(Debug, Deserialize)]
 struct ChunkResponse {
@@ -21,27 +24,12 @@ struct RemoteChunk {
 }
 
 pub async fn check_ready(cfg: &Config) -> bool {
-    let client = match Client::builder().timeout(Duration::from_secs(3)).build() {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    let Ok(resp) = client.get(&cfg.chunker_health_url).send().await else {
-        return false;
-    };
-    if !resp.status().is_success() {
-        return false;
-    }
-    let Ok(body) = resp.json::<serde_json::Value>().await else {
-        return false;
-    };
-    body.get("status")
-        .and_then(|v| v.as_str())
-        .is_some_and(|s| s == "healthy")
+    sidecar::health_ok(&cfg.chunker_health_url).await
 }
 
 pub async fn chunk_text(cfg: &Config, markdown: &str) -> AppResult<Vec<MarkdownChunk>> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(120))
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
         .build()
         .map_err(|e| AppError::Internal(e.to_string()))?;
 

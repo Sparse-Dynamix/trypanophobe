@@ -6,11 +6,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+from functools import lru_cache
 from pathlib import Path
 
 import uvicorn
 from chonkie import RecursiveChunker
-from chonkie.tokenizer import AutoTokenizer, TokieAutoTokenizer
+from chonkie.tokenizer import TokieAutoTokenizer
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from tokie import Tokenizer as TokieTokenizer
@@ -39,36 +40,35 @@ def _default_max_tokens() -> int:
     return int(os.environ.get("CHUNK_MAX_TOKENS", "2048"))
 
 
-def _tokenizer_spec() -> str:
+def _tokenizer_json_path() -> Path:
     model_root = Path(
         os.environ.get("CHUNKER_MODEL_DIR", "/opt/trypanophobe/chunker/models")
     )
     manifest = model_root / "manifest.json"
-    if manifest.is_file():
-        data = json.loads(manifest.read_text())
-        return data.get("tokenizer_json") or data["tokenizer_path"]
-    return os.environ.get("CHUNK_TOKENIZER", "gpt2")
+    if not manifest.is_file():
+        raise SystemExit(f"missing chunker manifest: {manifest}")
+    data = json.loads(manifest.read_text())
+    path = Path(data.get("tokenizer_json") or data["tokenizer_path"])
+    if path.is_dir():
+        path = path / "tokenizer.json"
+    if not path.is_file():
+        raise SystemExit(f"missing tokenizer.json: {path}")
+    return path
 
 
-def _load_tokenizer():
-    spec = _tokenizer_spec()
-    spec_path = Path(spec)
-    if spec_path.is_file() and spec_path.name == "tokenizer.json":
-        return TokieAutoTokenizer(TokieTokenizer.from_json(str(spec_path)))
-    if spec_path.is_dir():
-        tokenizer_json = spec_path / "tokenizer.json"
-        if tokenizer_json.is_file():
-            return TokieAutoTokenizer(TokieTokenizer.from_json(str(tokenizer_json)))
-    return AutoTokenizer(spec)
+@lru_cache(maxsize=1)
+def _tokenizer():
+    path = _tokenizer_json_path()
+    return TokieAutoTokenizer(TokieTokenizer.from_json(str(path)))
 
 
-def _create_chunker(max_tokens: int) -> RecursiveChunker:
-    return RecursiveChunker(tokenizer=_load_tokenizer(), chunk_size=max_tokens)
+@lru_cache(maxsize=8)
+def _chunker(max_tokens: int) -> RecursiveChunker:
+    return RecursiveChunker(tokenizer=_tokenizer(), chunk_size=max_tokens)
 
 
 def _chunk_text(text: str, max_tokens: int) -> list[ChunkItem]:
-    chunker = _create_chunker(max_tokens)
-    raw = chunker(text)
+    raw = _chunker(max_tokens)(text)
     if not raw:
         return [ChunkItem(index=0, text="", token_count=0)]
 
@@ -87,6 +87,8 @@ def _chunk_text(text: str, max_tokens: int) -> list[ChunkItem]:
 
 def _create_app() -> FastAPI:
     app = FastAPI()
+    _tokenizer()
+    _chunker(_default_max_tokens())
 
     @app.post("/chunk")
     def chunk_endpoint(body: ChunkRequest) -> ChunkResponse:
@@ -106,7 +108,12 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     host = os.environ.get("CHUNKER_HOST", "0.0.0.0")
     port = int(os.environ.get("CHUNKER_PORT", "8830"))
-    logging.info("Starting chunker on %s:%s tokenizer=%s", host, port, _tokenizer_spec())
+    logging.info(
+        "Starting chunker on %s:%s tokenizer=%s",
+        host,
+        port,
+        _tokenizer_json_path(),
+    )
     uvicorn.run(_create_app(), host=host, port=port)
 
 

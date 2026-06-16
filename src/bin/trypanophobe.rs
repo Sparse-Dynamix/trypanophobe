@@ -1,19 +1,20 @@
 use std::sync::Arc;
 
+use trypanophobe::config::Config;
+use trypanophobe::pipeline::url_guard::UrlGuard;
+use trypanophobe::readiness::{spawn_until_ready, Readiness};
+use trypanophobe::routes::{filter, health};
+use trypanophobe::services::{
+    chunker, ocr, NsfwImageClassifier, NsfwTextClassifier, PiholeProbe, Sentinel, WolfDefender,
+};
+use trypanophobe::state::AppState;
+
 use salvo::affix_state;
 use salvo::cors::{Any, Cors};
 use salvo::http::request::set_global_secure_max_size;
 use salvo::prelude::*;
 use tokio::signal::unix::{signal, SignalKind};
 use tracing_subscriber::EnvFilter;
-use trypanophobe::config::Config;
-use trypanophobe::pipeline::url_guard::UrlGuard;
-use trypanophobe::readiness::{spawn_poller, spawn_warmup, Readiness};
-use trypanophobe::routes::{filter, health};
-use trypanophobe::services::{
-    chunker, ocr, NsfwImageClassifier, NsfwTextClassifier, PiholeProbe, Sentinel, WolfDefender,
-};
-use trypanophobe::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -36,49 +37,49 @@ async fn main() -> anyhow::Result<()> {
     let poll = cfg.readiness_poll;
 
     let cfg_pihole = cfg.clone();
-    spawn_poller(handles.pihole, poll, move || {
+    spawn_until_ready(handles.pihole, poll, move || {
         let c = cfg_pihole.clone();
         async move { PiholeProbe::check_ready(&c).await }
     });
 
     let cfg_ocr = cfg.clone();
-    spawn_poller(handles.ocr, poll, move || {
+    spawn_until_ready(handles.ocr, poll, move || {
         let c = cfg_ocr.clone();
         async move { ocr::check_ready(&c).await }
     });
 
     let cfg_chunker = cfg.clone();
-    spawn_poller(handles.chunker, poll, move || {
+    spawn_until_ready(handles.chunker, poll, move || {
         let c = cfg_chunker.clone();
         async move { chunker::check_ready(&c).await }
     });
 
-    spawn_warmup(handles.sentinel, poll, {
+    spawn_until_ready(handles.sentinel, poll, {
         let s = Arc::clone(&sentinel);
         move || {
             let s = Arc::clone(&s);
-            async move { s.warmup().await }
+            async move { s.warmup().await.is_ok() }
         }
     });
-    spawn_warmup(handles.nsfw_text, poll, {
+    spawn_until_ready(handles.nsfw_text, poll, {
         let c = Arc::clone(&nsfw_text);
         move || {
             let c = Arc::clone(&c);
-            async move { c.warmup().await }
+            async move { c.warmup().await.is_ok() }
         }
     });
-    spawn_warmup(handles.nsfw_image, poll, {
+    spawn_until_ready(handles.nsfw_image, poll, {
         let c = Arc::clone(&nsfw_image);
         move || {
             let c = Arc::clone(&c);
-            async move { c.warmup().await }
+            async move { c.warmup().await.is_ok() }
         }
     });
-    spawn_warmup(handles.wolf, poll, {
+    spawn_until_ready(handles.wolf, poll, {
         let c = Arc::clone(&wolf);
         move || {
             let c = Arc::clone(&c);
-            async move { c.warmup().await }
+            async move { c.warmup().await.is_ok() }
         }
     });
 

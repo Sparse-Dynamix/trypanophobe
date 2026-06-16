@@ -7,6 +7,7 @@ use ort::value::Tensor;
 
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
+use crate::services::math::softmax_probs;
 
 #[derive(Debug, Clone)]
 pub struct NsfwImageResult {
@@ -101,20 +102,12 @@ impl NsfwImageClassifier {
             return Err(AppError::Internal("nsfw image empty logits".into()));
         };
 
-        let probs = softmax2(nsfw, sfw);
-        let nsfw_score = probs.0 as f64;
+        let probs = softmax_probs(&[nsfw, sfw])?;
+        let nsfw_score = probs[0] as f64;
         let blocked = nsfw_score >= self.threshold as f64;
         Ok(NsfwImageResult {
             label: if blocked { "nsfw" } else { "sfw" }.into(),
             blocked,
         })
     }
-}
-
-fn softmax2(a: f32, b: f32) -> (f32, f32) {
-    let m = a.max(b);
-    let ea = (a - m).exp();
-    let eb = (b - m).exp();
-    let s = ea + eb;
-    (ea / s, eb / s)
 }

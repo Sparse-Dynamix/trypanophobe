@@ -1,13 +1,15 @@
 pub mod chunker;
+pub mod math;
 pub mod nsfw_image;
 pub mod nsfw_text;
 pub mod ocr;
 pub mod pihole;
 pub mod preprocess;
 pub mod sentinel;
-pub mod sliding_window;
+pub mod sidecar;
 pub mod wolf;
 
+pub use chunker::MarkdownChunk;
 pub use nsfw_image::NsfwImageClassifier;
 pub use nsfw_text::NsfwTextClassifier;
 pub use pihole::PiholeProbe;

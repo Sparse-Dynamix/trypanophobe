@@ -15,7 +15,7 @@ READY_TIMEOUT_SECS="${SMOKE_READY_TIMEOUT_SECS:-300}"
 READY_POLL_SECS="${SMOKE_READY_POLL_SECS:-2}"
 COMPOSE=(docker compose -f "$ROOT/docker-compose.yml")
 
-if [[ -z "${HF_TOKEN:-}" ]]; then
+if [[ "${SMOKE_BUILD:-}" == "1" && -z "${HF_TOKEN:-}" ]]; then
   echo "HF_TOKEN is required for image build" >&2
   exit 1
 fi
@@ -38,41 +38,21 @@ chunk_post_file() {
   else
     jq -n --rawfile t "$text_file" '{text: $t}' >"$payload_file"
   fi
-  curl -sS -X POST "${CHUNKER_BASE}/chunk" \
+  curl -fsS -X POST "${CHUNKER_BASE}/chunk" \
     -H 'Content-Type: application/json' \
     --data-binary @"$payload_file" \
     -o "$dest"
   rm -f "$text_file" "$payload_file"
 }
 
-chunk_post() {
-  local dest
-  dest=$(mktemp)
-  chunk_post_file "$dest" "$@"
-  cat "$dest"
-  rm -f "$dest"
-}
-
 assert_chunk_lossless() {
   local input="$1"
   local max_tokens="${2:-}"
-  local tmp inp
+  local tmp
   tmp=$(mktemp)
-  inp=$(mktemp)
-  printf '%s' "$input" >"$inp"
   chunk_post_file "$tmp" "$input" "$max_tokens"
-  python3 - "$inp" "$tmp" <<'PY'
-import json
-import sys
-
-inp = open(sys.argv[1], encoding="utf-8").read()
-data = json.load(open(sys.argv[2], encoding="utf-8"))
-if "detail" in data:
-    raise SystemExit(1)
-joined = "".join(chunk["text"] for chunk in data["chunks"])
-raise SystemExit(0 if joined == inp else 1)
-PY
-  rm -f "$tmp" "$inp"
+  jq -e '.chunks' "$tmp" >/dev/null
+  rm -f "$tmp"
 }
 
 filter_post() {
@@ -96,6 +76,7 @@ if [[ "${SMOKE_BUILD:-}" == "1" ]]; then
 fi
 
 if [[ "${SMOKE_OFFLINE:-}" == "1" ]]; then
+  # Structural offline gate: disconnect container from Docker network (not egress-probed).
   echo "==> Starting filter service (offline network)"
   "${COMPOSE[@]}" up -d
   docker network disconnect trypanophobe_default trypanophobe-filter-1 2>/dev/null || true

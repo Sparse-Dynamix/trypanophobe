@@ -5,13 +5,12 @@ pub mod url_guard;
 
 use std::sync::Arc;
 
-use salvo::http::StatusCode;
-
 use crate::convert_config::{hint_from_url_and_content_type, sniff_content_kind, ContentKind};
 use crate::error::{AppError, AppResult};
 use crate::pipeline::convert::to_markdown;
 use crate::pipeline::moderate::{moderate_chunks, moderate_image};
-use crate::pipeline::respond::{FilterResponse, ResponseFormat};
+use crate::pipeline::respond::{BlockedBody, FilterResponse, ResponseFormat};
+use crate::pipeline::url_guard::UrlCheckOutcome;
 use crate::services::chunker;
 use crate::state::AppState;
 
@@ -32,8 +31,17 @@ pub async fn run_filter(state: &Arc<AppState>, req: FilterRequest) -> AppResult<
     }
 
     state.wait_pihole().await?;
-    if !state.url_guard.check_url(&req.url).await? {
-        return Ok(FilterResponse::blocked());
+    match state.url_guard.check_url(&req.url).await? {
+        UrlCheckOutcome::Allowed => {}
+        UrlCheckOutcome::Blocked { reason, detail } => {
+            let block = match reason.as_str() {
+                "URL blocked by network policy" => {
+                    BlockedBody::url_network_policy(detail.as_deref().unwrap_or("blocked"))
+                }
+                _ => BlockedBody::url_dns_blocklist(detail),
+            };
+            return Ok(FilterResponse::blocked(block));
+        }
     }
 
     state.wait_ml().await?;
@@ -44,8 +52,12 @@ pub async fn run_filter(state: &Arc<AppState>, req: FilterRequest) -> AppResult<
     let markdown = match kind {
         ContentKind::Image => {
             match moderate_image(state, &req.body).await {
-                Err(crate::error::AppError::Forbidden(_)) => {
-                    return Ok(FilterResponse::blocked());
+                Err(AppError::Forbidden(msg)) => {
+                    let label = msg
+                        .strip_prefix("forbidden: nsfw_image_detected: ")
+                        .or_else(|| msg.strip_prefix("nsfw_image_detected: "))
+                        .unwrap_or(&msg);
+                    return Ok(FilterResponse::blocked(BlockedBody::nsfw_image(label)));
                 }
                 other => other?,
             }
@@ -65,14 +77,15 @@ pub async fn run_filter(state: &Arc<AppState>, req: FilterRequest) -> AppResult<
     };
 
     let chunks = chunker::chunk_text(&state.config, &markdown).await?;
-    let safe_chunks = moderate_chunks(state, &chunks).await?;
+    let moderation = moderate_chunks(state, &chunks).await?;
 
     Ok(FilterResponse::from_chunks(
         &req.body,
         &markdown,
         &chunks,
-        &safe_chunks,
+        &moderation.safe_chunks,
         req.response_format,
+        &moderation.flagged_models,
     ))
 }
 
@@ -96,8 +109,24 @@ impl FilterResponse {
             res.headers_mut()
                 .insert("Content-Type", ct.parse().expect("content-type"));
         }
-        if !self.body.is_empty() || self.status != StatusCode::NOT_ACCEPTABLE {
+        if !self.body.is_empty() {
             res.body(self.body.clone());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::respond::{BlockStage, BlockedBody};
+
+    #[test]
+    fn forbidden_maps_to_nsfw_image_block() {
+        let msg = "forbidden: nsfw_image_detected: nsfw";
+        let label = msg
+            .strip_prefix("forbidden: nsfw_image_detected: ")
+            .unwrap();
+        let block = BlockedBody::nsfw_image(label);
+        assert_eq!(block.stage, BlockStage::NsfwImage);
+        assert_eq!(block.detail.as_deref(), Some("nsfw"));
     }
 }

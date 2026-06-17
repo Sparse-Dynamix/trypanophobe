@@ -11,12 +11,12 @@ export HF_TOKEN=...   # required for the first image build (see AGENTS.md)
 docker compose up --build
 ```
 
-The filter listens at `http://localhost:8080/`.
+The filter API is at `http://localhost:8080/api/filter`. `GET /` redirects to Swagger UI.
 
 ## Request lifecycle
 
-1. `POST /?url=<source-url>` with body (**`url` is required**)
-2. URL checked via Pi-hole; blocked hosts → **406**
+1. `POST /api/filter?url=<source-url>` with body (**`url` is required**)
+2. URL checked via Pi-hole; blocked hosts → **406** with JSON `stage` and `reason`
 3. Body converted to markdown when needed, then chunked for scoring
    - Images: NSFW image filter → OCR → markdown
 4. Each chunk scored: Sentinel V2 (full chunk), Wolf + NSFW text (512-token sliding windows)
@@ -24,7 +24,7 @@ The filter listens at `http://localhost:8080/`.
 6. Response:
    - **200** — all chunks safe
    - **206** — partial (`?format=md` only; use with `--tps` in payload mode)
-   - **406** — all chunks removed, URL blocked, or partial with `format=og`
+   - **406** — blocked; JSON body includes `stage` (`url_check`, `nsfw_image`, `chunk_moderation`, `response_format`) and `reason`
 
 ### Query parameters
 
@@ -38,14 +38,14 @@ The filter listens at `http://localhost:8080/`.
 **Payload mode** — filter response bodies; use `--tps` so partial `206` markdown replaces what the harness sees:
 
 ```bash
-export GUARDIAN_TRYPANOPHOBE_FILTER=http://127.0.0.1:8080/
+export GUARDIAN_TRYPANOPHOBE_FILTER=http://127.0.0.1:8080/api/filter
 guardian --tpf "$GUARDIAN_TRYPANOPHOBE_FILTER" --tps -- your-agent-command
 ```
 
 **Wrapper mode** — do **not** pass `--tps`. It rewrites packet shape in ways the wrapper harness does not expect and can break the run. Use `--tpf` only:
 
 ```bash
-export GUARDIAN_TRYPANOPHOBE_FILTER=http://127.0.0.1:8080/
+export GUARDIAN_TRYPANOPHOBE_FILTER=http://127.0.0.1:8080/api/filter
 guardian --tpf "$GUARDIAN_TRYPANOPHOBE_FILTER" -- your-agent-command
 ```
 
@@ -55,8 +55,9 @@ guardian --tpf "$GUARDIAN_TRYPANOPHOBE_FILTER" -- your-agent-command
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/` or `/filter` | Guardian filter (`?url=` required) |
+| `POST` | `/api/filter` | Guardian filter (`?url=` required) |
 | `GET` | `/api/health` | Readiness |
+| `GET` | `/` | Redirect to Swagger UI |
 | `GET` | `/swagger-ui` | OpenAPI UI |
 
 ## Development

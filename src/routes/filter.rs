@@ -2,11 +2,22 @@ use salvo::oapi::endpoint;
 use salvo::prelude::*;
 
 use crate::error::{AppError, AppResult};
-use crate::pipeline::respond::ResponseFormat;
+use crate::pipeline::respond::{BlockedBody, ResponseFormat};
 use crate::pipeline::{run_filter, FilterRequest};
 use crate::routes::app_state;
 
-async fn handle_filter(req: &mut Request, depot: &mut Depot, res: &mut Response) -> AppResult<()> {
+#[endpoint(
+    responses(
+        (status_code = 200, description = "All content safe"),
+        (status_code = 206, description = "Partial content safe (format=md)"),
+        (status_code = 406, description = "Content blocked", body = BlockedBody),
+    )
+)]
+pub async fn filter_post(
+    req: &mut Request,
+    depot: &mut Depot,
+    res: &mut Response,
+) -> AppResult<()> {
     let state = app_state(depot);
 
     let url = req
@@ -44,22 +55,4 @@ async fn handle_filter(req: &mut Request, depot: &mut Depot, res: &mut Response)
 
     outcome.apply_to_response(res);
     Ok(())
-}
-
-#[endpoint]
-pub async fn filter_post(
-    req: &mut Request,
-    depot: &mut Depot,
-    res: &mut Response,
-) -> AppResult<()> {
-    handle_filter(req, depot, res).await
-}
-
-#[endpoint]
-pub async fn filter_root(
-    req: &mut Request,
-    depot: &mut Depot,
-    res: &mut Response,
-) -> AppResult<()> {
-    handle_filter(req, depot, res).await
 }

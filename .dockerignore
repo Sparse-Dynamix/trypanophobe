@@ -1,3 +1,9 @@
+.git/
+.cursor/
+**/.venv/
+smoke.sh
+README.md
+AGENTS.md
 target/
 **/__pycache__/
 models/

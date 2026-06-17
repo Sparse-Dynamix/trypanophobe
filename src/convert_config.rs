@@ -49,6 +49,16 @@ pub fn extension_from_filename(filename: &str) -> Result<String, String> {
 }
 
 pub fn hint_from_url_and_content_type(url: Option<&str>, content_type: Option<&str>) -> String {
+    if let Some(url) = url {
+        if let Ok(parsed) = url::Url::parse(url) {
+            let path = parsed.path();
+            if let Some(name) = Path::new(path).file_name().and_then(|s| s.to_str()) {
+                if name.contains('.') {
+                    return name.to_string();
+                }
+            }
+        }
+    }
     if let Some(ct) = content_type {
         let ct = ct
             .split(';')
@@ -59,16 +69,6 @@ pub fn hint_from_url_and_content_type(url: Option<&str>, content_type: Option<&s
         let ext = mime_to_ext(&ct);
         if !ext.is_empty() {
             return format!("page.{ext}");
-        }
-    }
-    if let Some(url) = url {
-        if let Ok(parsed) = url::Url::parse(url) {
-            let path = parsed.path();
-            if let Some(name) = Path::new(path).file_name().and_then(|s| s.to_str()) {
-                if name.contains('.') {
-                    return name.to_string();
-                }
-            }
         }
     }
     "page.html".into()
@@ -182,6 +182,19 @@ mod tests {
         assert_eq!(
             sniff_content_kind("x.png", b"\x89PNG\r\n\x1a\n"),
             ContentKind::Image
+        );
+    }
+
+    #[test]
+    fn hint_prefers_url_extension_over_content_type() {
+        let hint = hint_from_url_and_content_type(
+            Some("https://example.com/single-paragraph.docx"),
+            Some("text/html"),
+        );
+        assert_eq!(hint, "single-paragraph.docx");
+        assert_eq!(
+            sniff_content_kind(&hint, b"PK\x03\x04"),
+            ContentKind::TextDocument
         );
     }
 }

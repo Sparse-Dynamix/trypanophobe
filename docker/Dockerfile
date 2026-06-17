@@ -17,6 +17,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /build
 COPY Cargo.toml rust-toolchain.toml ./
 COPY config ./config
+COPY fixtures ./fixtures
 COPY src ./src
 ENV CARGO_PROFILE_RELEASE_LTO=true
 ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
@@ -25,7 +26,8 @@ RUN cargo test --lib \
     && strip target/release/trypanophobe \
     && LLAMA_LIBDIR="$(find target/llama-cmake-cache -type f -name 'libllama.so.0.0.0' -printf '%h\n' | head -1)" \
     && mkdir -p /llama-libs \
-    && cp -a "${LLAMA_LIBDIR}"/lib*.so* /llama-libs/
+    && cp -a "${LLAMA_LIBDIR}"/lib*.so* /llama-libs/ \
+    && cp target/release/deps/libpdfium.so /llama-libs/
 
 FROM python:3.12-slim-bookworm AS model-assets
 ARG SENTINEL_QUANT
@@ -48,31 +50,46 @@ RUN printf '%s\n' \
     > /etc/pihole/adlists.list && \
     pihole -g
 
+FROM ubuntu:24.04 AS pihole-smoke
+RUN apt-get update && apt-get install -y --no-install-recommends sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=pihole-gravity /etc/pihole/gravity.db /tmp/gravity.db
+RUN smoke_host="$(sqlite3 /tmp/gravity.db "SELECT domain FROM gravity WHERE domain NOT IN ('localhost','localhost.localdomain') AND domain LIKE '%.%' LIMIT 1;")" \
+    && test -n "${smoke_host}" \
+    && mkdir -p /etc/trypanophobe \
+    && printf 'https://%s/\n' "$smoke_host" > /etc/trypanophobe/smoke-blocked-url
+
+FROM ghcr.io/astral-sh/uv:latest AS uv
+
 FROM ubuntu:24.04 AS runtime
 ARG SENTINEL_QUANT
 
 COPY --from=lambda-adapter /lambda-adapter /opt/extensions/lambda-adapter
+COPY --from=uv /uv /usr/local/bin/uv
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates supervisor openssl sqlite3 \
+    ca-certificates supervisor \
     libssl3 libgomp1 libstdc++6 \
-    libreoffice-writer libreoffice-calc libreoffice-impress \
-    imagemagick \
+    libreoffice-core-nogui libreoffice-writer-nogui libreoffice-calc-nogui libreoffice-impress-nogui \
+    imagemagick-6.q16 \
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
-    python3 python3-venv \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:${PATH}"
+    && rm -rf /var/lib/apt/lists/* \
+    && soffice --version && convert -version
 
 COPY src/services/ocr/pyproject.toml src/services/ocr/uv.lock /opt/trypanophobe/ocr/
 RUN uv sync --frozen --no-dev --directory /opt/trypanophobe/ocr
 COPY src/services/ocr/ /opt/trypanophobe/ocr/
+ENV OCR_MODEL_DIR=/opt/trypanophobe/ocr/models
+ENV PADDLE_PDX_CACHE_HOME=/opt/trypanophobe/ocr/models
 RUN --mount=type=secret,id=hf_token \
     export HF_TOKEN="$(cat /run/secrets/hf_token)" && \
     test -n "$HF_TOKEN" && \
-    uv run --directory /opt/trypanophobe/ocr python bake_assets.py
+    uv run --directory /opt/trypanophobe/ocr python bake_assets.py \
+    && test "$(find /opt/trypanophobe/ocr/models -name '*.pdiparams' | wc -l)" -gt 0 \
+    && rm -f /opt/trypanophobe/ocr/bake_assets.py \
+    && uv cache clean \
+    && find /opt/trypanophobe/ocr -type d -name __pycache__ -prune -exec rm -rf {} +
 
 COPY src/services/chunker/pyproject.toml src/services/chunker/uv.lock /opt/trypanophobe/chunker/
 RUN uv sync --frozen --no-dev --directory /opt/trypanophobe/chunker
@@ -80,26 +97,27 @@ COPY src/services/chunker/ /opt/trypanophobe/chunker/
 RUN --mount=type=secret,id=hf_token \
     export HF_TOKEN="$(cat /run/secrets/hf_token)" && \
     test -n "$HF_TOKEN" && \
-    uv run --directory /opt/trypanophobe/chunker python bake_assets.py
+    uv run --directory /opt/trypanophobe/chunker python bake_assets.py \
+    && rm -f /opt/trypanophobe/chunker/bake_assets.py \
+    && uv cache clean \
+    && find /opt/trypanophobe/chunker -type d -name __pycache__ -prune -exec rm -rf {} +
 
 COPY --from=pihole-gravity /usr/bin/pihole-FTL /usr/bin/pihole-FTL
-COPY --from=pihole-gravity /usr/local/bin/pihole /usr/local/bin/pihole
 COPY --from=pihole-gravity /opt/pihole /opt/pihole
 COPY --from=pihole-gravity /etc/pihole /etc/pihole
+COPY --from=pihole-smoke /etc/trypanophobe/smoke-blocked-url /etc/trypanophobe/smoke-blocked-url
 COPY config/pihole.toml /etc/pihole/pihole.toml
 RUN groupadd -r pihole 2>/dev/null || true \
     && useradd -r -g pihole -d /etc/pihole -s /usr/sbin/nologin pihole 2>/dev/null || true \
     && mkdir -p /etc/trypanophobe \
     && chown -R pihole:pihole /etc/pihole \
-    && rm -rf /opt/pihole/web /opt/pihole/html \
-    && smoke_host="$(sqlite3 /etc/pihole/gravity.db "SELECT domain FROM gravity WHERE domain NOT IN ('localhost','localhost.localdomain') AND domain LIKE '%.%' LIMIT 1;")" \
-    && test -n "${smoke_host}" \
-    && printf 'https://%s/\n' "$smoke_host" > /etc/trypanophobe/smoke-blocked-url
+    && rm -rf /opt/pihole/web /opt/pihole/html
 
 COPY --from=rust-builder /build/target/release/trypanophobe /usr/local/bin/trypanophobe
 COPY --from=rust-builder /llama-libs/ /usr/local/lib/
 RUN ldconfig
 COPY --from=model-assets /models /opt/trypanophobe/models
+COPY fixtures /opt/trypanophobe/fixtures
 
 COPY config/env.defaults /etc/trypanophobe/env.defaults
 COPY docker/setup-pihole-log-fifos.sh /usr/local/bin/setup-pihole-log-fifos.sh

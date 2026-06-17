@@ -96,14 +96,10 @@ async fn main() -> anyhow::Result<()> {
 
     let api = Router::with_path("api")
         .hoop(affix_state::inject(Arc::clone(&state)))
-        .push(Router::with_path("health").get(health::health));
-
-    let filter_router = Router::new()
-        .hoop(affix_state::inject(Arc::clone(&state)))
-        .post(filter::filter_root)
+        .push(Router::with_path("health").get(health::health))
         .push(Router::with_path("filter").post(filter::filter_post));
 
-    let router = trypanophobe::openapi::mount_openapi(api).push(filter_router);
+    let router = trypanophobe::openapi::mount_openapi(api);
 
     let cors = Cors::new()
         .allow_origin(Any)

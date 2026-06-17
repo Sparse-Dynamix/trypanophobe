@@ -7,10 +7,25 @@ use crate::error::AppResult;
 use crate::network_policy::url_blocked;
 use crate::services::pihole::{parse_host, PiholeProbe};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UrlCheckOutcome {
+    Allowed,
+    Blocked {
+        reason: String,
+        detail: Option<String>,
+    },
+}
+
+impl UrlCheckOutcome {
+    pub fn is_allowed(&self) -> bool {
+        matches!(self, Self::Allowed)
+    }
+}
+
 #[derive(Clone)]
 pub struct UrlGuard {
     pihole: Arc<PiholeProbe>,
-    cache: Cache<String, bool>,
+    cache: Cache<String, UrlCheckOutcome>,
 }
 
 impl UrlGuard {
@@ -22,24 +37,32 @@ impl UrlGuard {
         Arc::new(Self { pihole, cache })
     }
 
-    pub async fn check_url(self: &Arc<Self>, url: &str) -> AppResult<bool> {
+    pub async fn check_url(self: &Arc<Self>, url: &str) -> AppResult<UrlCheckOutcome> {
         if let Some(code) = url_blocked(url) {
             tracing::debug!(url, code, "url blocked by network policy");
-            return Ok(false);
+            return Ok(UrlCheckOutcome::Blocked {
+                reason: "URL blocked by network policy".into(),
+                detail: Some(code.into()),
+            });
         }
 
         let host = parse_host(url)?;
-        if let Some(allowed) = self.cache.get(&host) {
-            return Ok(allowed);
+        if let Some(cached) = self.cache.get(&host) {
+            return Ok(cached);
         }
 
         let result = self.pihole.probe_host(&host).await?;
-        let allowed = result.allowed;
-        self.cache.insert(host, allowed);
-        if !allowed {
+        let outcome = if result.allowed {
+            UrlCheckOutcome::Allowed
+        } else {
             tracing::debug!(url, reason = ?result.reason, "url blocked by pi-hole");
-        }
-        Ok(allowed)
+            UrlCheckOutcome::Blocked {
+                reason: "URL blocked by DNS blocklist".into(),
+                detail: result.reason,
+            }
+        };
+        self.cache.insert(host, outcome.clone());
+        Ok(outcome)
     }
 }
 
@@ -52,10 +75,16 @@ mod tests {
         let cfg = Config::from_env();
         let pihole = PiholeProbe::new(&cfg).expect("pihole");
         let guard = UrlGuard::new(&cfg, pihole);
-        let allowed = guard
+        let outcome = guard
             .check_url("http://169.254.169.254/latest/meta-data/")
             .await
             .expect("check");
-        assert!(!allowed);
+        assert_eq!(
+            outcome,
+            UrlCheckOutcome::Blocked {
+                reason: "URL blocked by network policy".into(),
+                detail: Some("blocked_host".into()),
+            }
+        );
     }
 }

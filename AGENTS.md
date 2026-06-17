@@ -10,6 +10,7 @@ Developer and agent notes for the trypanophobe repository.
 - [anytomd](https://crates.io/crates/anytomd) for HTML/JSON/text
 - ML: Sentinel V2 Q8, Wolf Defender (ONNX), DistilBERT NSFW text, Marqo NSFW image ViT
 - Pi-hole FTL in the same container (supervisord)
+- Headless LibreOffice + ImageMagick for liteparse format conversion
 
 ## Architecture
 
@@ -22,10 +23,20 @@ The container runs four supervisord programs:
 | `chunker` | 8830 | Chonkie tokenizer/chunker sidecar |
 | `trypanophobe` | 8080 | Filter API |
 
+Public endpoints:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/filter` | Guardian filter (`?url=` required) |
+| `GET` | `/api/health` | Readiness |
+| `GET` | `/` | Redirect to Swagger UI |
+
 Sidecar endpoints (internal):
 
 - `POST :8829/ocr`, `GET :8829/health`
 - `POST :8830/chunk`, `GET :8830/health`
+
+406 filter blocks return JSON: `{"error":"content_blocked","stage":"...","reason":"...","detail":"..."}`.
 
 Python sidecars use locked deps (`uv.lock` in `src/services/ocr/` and `src/services/chunker/`). After changing `pyproject.toml`, run `uv lock` in each directory.
 
@@ -46,7 +57,7 @@ First build downloads and bakes models; subsequent builds reuse cached layers wh
 docker build --target rust-builder -f docker/Dockerfile .
 ```
 
-The `rust-builder` stage runs `cargo test --lib` and `cargo build --release`.
+The `rust-builder` stage runs `cargo test --lib` and `cargo build --release`. Liteparse fixture tests skip when LibreOffice is not installed.
 
 ## Smoke test
 
@@ -61,7 +72,7 @@ Optional offline gate (no runtime network after build):
 SMOKE_BUILD=1 SMOKE_OFFLINE=1 ./smoke.sh
 ```
 
-`SMOKE_BUILD=1` rebuilds the image before exercising OCR, chunker, filter, and sliding-window cases.
+`SMOKE_BUILD=1` rebuilds the image before exercising OCR, chunker, filter, 406 stage assertions, and liteparse fixture conversions.
 
 ## Models
 
@@ -86,6 +97,7 @@ Hugging Face sources:
 | `src/` | Rust filter service |
 | `src/services/ocr/` | OCR Python sidecar |
 | `src/services/chunker/` | Chunker Python sidecar |
+| `fixtures/` | Checked-in liteparse test files (see `ATTRIBUTION.md`) |
 | `docker/` | Dockerfile, model bake, entrypoint |
 | `config/env.defaults` | Default environment |
 | `supervisor/` | supervisord config |

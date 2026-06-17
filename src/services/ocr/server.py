@@ -53,6 +53,14 @@ def _create_app(ocr) -> FastAPI:
             image = Image.open(io.BytesIO(image_data))
             if image.mode != "RGB":
                 image = image.convert("RGB")
+            max_side = 1600
+            w, h = image.size
+            if max(w, h) > max_side:
+                scale = max_side / max(w, h)
+                image = image.resize(
+                    (max(1, int(w * scale)), max(1, int(h * scale))),
+                    Image.Resampling.LANCZOS,
+                )
             image_array = np.array(image)
             results = ocr.predict(image_array)
         except Exception as e:
@@ -134,6 +142,9 @@ def main() -> None:
     host = os.environ.get("OCR_HOST", "0.0.0.0")
     port = int(os.environ.get("OCR_PORT", "8829"))
     ocr = create_paddle_ocr()
+    warmup = np.zeros((64, 64, 3), dtype=np.uint8)
+    ocr.predict(warmup)
+    logging.info("OCR warmup complete")
     logging.info("Starting OCR server on %s:%s", host, port)
     uvicorn.run(_create_app(ocr), host=host, port=port)
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use trypanophobe::config::Config;
+use trypanophobe::middleware::fifo_concurrency;
 use trypanophobe::pipeline::url_guard::UrlGuard;
 use trypanophobe::readiness::{spawn_until_ready, Readiness};
 use trypanophobe::routes::{filter, health};
@@ -94,10 +95,15 @@ async fn main() -> anyhow::Result<()> {
         url_guard,
     );
 
+    let filter_gate = fifo_concurrency::fifo_concurrency(cfg.filter_max_concurrent);
     let api = Router::with_path("api")
         .hoop(affix_state::inject(Arc::clone(&state)))
         .push(Router::with_path("health").get(health::health))
-        .push(Router::with_path("filter").post(filter::filter_post));
+        .push(
+            Router::with_path("filter")
+                .hoop(filter_gate)
+                .post(filter::filter_post),
+        );
 
     let router = trypanophobe::openapi::mount_openapi(api);
 
@@ -105,6 +111,10 @@ async fn main() -> anyhow::Result<()> {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any)
+        .expose_headers(vec![
+            fifo_concurrency::QUEUE_WAIT_HEADER,
+            fifo_concurrency::PROCESS_MS_HEADER,
+        ])
         .into_handler();
     let service = Service::new(router).hoop(cors);
 

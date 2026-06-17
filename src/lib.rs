@@ -1,6 +1,7 @@
 pub mod config;
 pub mod convert_config;
 pub mod error;
+pub mod middleware;
 pub mod network_policy;
 pub mod openapi;
 pub mod pipeline;

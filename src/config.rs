@@ -14,7 +14,6 @@ pub struct Config {
     pub sentinel_cls_head_path: PathBuf,
     pub sentinel_gpu_layers: u32,
     pub sentinel_max_input_tokens: usize,
-    pub sentinel_max_parallel: usize,
     pub sentinel_warmup_text: String,
     pub sentinel_threshold: f32,
     pub pihole_dns: String,
@@ -41,6 +40,7 @@ pub struct Config {
     pub nsfw_text_window_tokens: usize,
     pub url_cache_ttl: Duration,
     pub url_cache_capacity: u64,
+    pub filter_max_concurrent: usize,
 }
 
 fn trim_env_value(v: &str) -> &str {
@@ -158,7 +158,6 @@ impl Config {
                 .unwrap_or(default_cls),
             sentinel_gpu_layers: env_u32("SENTINEL_GPU_LAYERS"),
             sentinel_max_input_tokens: env_usize("SENTINEL_MAX_INPUT_TOKENS"),
-            sentinel_max_parallel: env_usize("SENTINEL_MAX_PARALLEL").max(1),
             sentinel_warmup_text: env_str("SENTINEL_WARMUP_TEXT"),
             sentinel_threshold: env_f32("SENTINEL_THRESHOLD"),
             pihole_dns: env_str("PIHOLE_DNS"),
@@ -191,6 +190,7 @@ impl Config {
             nsfw_text_window_tokens: env_usize("NSFW_TEXT_WINDOW_TOKENS").max(64),
             url_cache_ttl: env_secs("URL_CACHE_TTL_SECS"),
             url_cache_capacity: env_u64("URL_CACHE_CAPACITY"),
+            filter_max_concurrent: env_usize("FILTER_MAX_CONCURRENT").max(1),
         }
     }
 }

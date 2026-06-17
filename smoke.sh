@@ -128,6 +128,12 @@ wait_ready() {
 
 wait_ready
 
+echo "==> CORS OPTIONS preflight"
+cors_headers=$(curl -sS -D - -o /dev/null -X OPTIONS "${FILTER_API}?url=https://example.com/" \
+  -H 'Origin: http://localhost:3000' \
+  -H 'Access-Control-Request-Method: POST')
+echo "$cors_headers" | grep -qi 'access-control-allow-origin'
+
 echo "==> OCR health"
 curl -sf "${OCR_BASE}/health" | jq -e '.status == "healthy"' >/dev/null
 

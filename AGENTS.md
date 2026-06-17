@@ -38,6 +38,12 @@ Sidecar endpoints (internal):
 
 406 filter blocks return JSON: `{"error":"content_blocked","stage":"...","reason":"...","detail":"..."}`.
 
+## Concurrency and CORS
+
+- `FILTER_MAX_CONCURRENT` (default `1`) — FIFO gate on `POST /api/filter` only via [`src/middleware/fifo_concurrency.rs`](src/middleware/fifo_concurrency.rs). Excess requests wait in queue; health and Swagger are unbounded.
+- Response headers `X-Queue-Wait-Ms` and `X-Process-Ms` report queue vs handler time.
+- CORS is applied on the Salvo `Service` (not the router) per [Salvo CORS docs](https://salvo.rs/guide/features/cors.html), with permissive origins/methods/headers and exposed timing headers for cross-origin clients.
+
 Python sidecars use locked deps (`uv.lock` in `src/services/ocr/` and `src/services/chunker/`). After changing `pyproject.toml`, run `uv lock` in each directory.
 
 ## Build and run

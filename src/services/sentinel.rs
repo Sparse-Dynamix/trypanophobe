@@ -9,7 +9,6 @@ use llama_cpp_4::model::params::LlamaModelParams;
 use llama_cpp_4::model::{AddBos, LlamaModel};
 use llama_cpp_4::token::LlamaToken;
 use ndarray::Array2;
-use tokio::sync::Semaphore;
 
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
@@ -29,7 +28,6 @@ pub struct Sentinel {
     model: Arc<LlamaModel>,
     cls_head: Array2<f32>,
     max_input_tokens: usize,
-    parallel: Arc<Semaphore>,
     warmup_text: String,
     threshold: f32,
 }
@@ -55,7 +53,6 @@ impl Sentinel {
             model: Arc::new(model),
             cls_head,
             max_input_tokens,
-            parallel: Arc::new(Semaphore::new(cfg.sentinel_max_parallel)),
             warmup_text: cfg.sentinel_warmup_text.clone(),
             threshold: cfg.sentinel_threshold,
         }))
@@ -97,12 +94,6 @@ impl Sentinel {
     }
 
     async fn classify_tokens(&self, tokens: &[LlamaToken]) -> AppResult<ChunkScores> {
-        // Fair semaphore (parallel=1): concurrent requests wait FIFO for the single slot.
-        let _permit = self
-            .parallel
-            .acquire()
-            .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
         let model = Arc::clone(&self.model);
         let backend = Arc::clone(&self.backend);
         let cls_head = self.cls_head.clone();
